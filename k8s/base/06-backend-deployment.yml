@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notes-backend
+  labels:
+    app: notes-backend
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1          # Permite levantar 1 Pod nuevo antes de apagar los viejos
+      maxUnavailable: 0    # GARANTÍA: Nunca habrá menos de 2 Pods atendiendo tráfico
+  selector:
+    matchLabels:
+      app: notes-backend
+  template:
+    metadata:
+      labels:
+        app: notes-backend
+    spec:
+      containers:
+        - name: backend
+          image: devops-tp06-backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5000
+          envFrom:
+            - configMapRef:
+                name: backend-config
+            - secretRef:
+                name: postgres-secret
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+            - name: DB_USER
+              value: "postgres"
+
+          # ── SONDA DE DISPONIBILIDAD (READINESS PROBE) ─────────────────────
+          # Si esta sonda falla, K8s NO LE ENVÍA TRÁFICO y NO APAGA el Pod viejo
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 3
+            failureThreshold: 2
+          # ── SONDA DE VITALIDAD (LIVENESS PROBE) ───────────────────────────
+          # Si la aplicación se cuelga en ejecución, K8s reinicia el contenedor
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "300m"
+              memory: "256Mi"
